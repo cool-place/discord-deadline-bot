@@ -4,6 +4,7 @@ import logging
 from dotenv import load_dotenv
 import os
 
+#load env, load token
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')
 
@@ -20,6 +21,7 @@ newrole = "test dummy"
 
 @bot.event
 async def on_ready():
+    await bot.tree.sync()
     print(f"{bot.user.name} ACTIVATED >:3")
 
 @bot.event
@@ -41,12 +43,10 @@ async def assignrole(ctx):
     role = discord.utils.get(guild.roles, name=newrole)
 
     if not role:
-        await ctx.message.delete(delay=4.0)
         await ctx.send("role doesn't exist", delete_after=4.0)
         return
 
     if role in user.roles:
-        await ctx.message.delete(delay=4.0)
         await ctx.send(f"{user.mention}, you already have the **{newrole}** role", delete_after=4.0)
         return
     
@@ -82,14 +82,132 @@ async def commands(ctx):
 
     await ctx.message.delete(delay=4.0)
 
-@bot.command()
-async def syllabus(ctx, attachment: discord.Attachment):
-    file_path = os.path.join("temp_uploads", attachment.filename)
+class DocxUploadModal(discord.ui.Modal, title="Upload DOCX Syllabus"):
 
-    await attachment.save(file_path)
+    upload = discord.ui.Label(
+        text="Syllabus file",
+        description="Choose a .docx file",
+        component=discord.ui.FileUpload(
+            required=True,
+            min_values=1,
+            max_values=1
+        )
+    )
 
-    await ctx.author.send(f"Saved {attachment.filename}!")
+    async def on_submit(self, interaction: discord.Interaction):
 
-    await ctx.message.delete(delay=4.0)
+        attachment = self.upload.component.values[0]
 
+        if not attachment.filename.lower().endswith(".docx"):
+            await interaction.response.send_message(
+                "That isn't a .docx file!",
+                ephemeral=True
+            )
+            return
+
+        file_path = os.path.join(
+            "temp_uploads",
+            attachment.filename
+        )
+
+        await attachment.save(file_path)
+
+        await interaction.response.send_message(
+            f"Saved `{attachment.filename}`!",
+            ephemeral=True
+        )
+
+class PdfUploadModal(discord.ui.Modal, title="Upload PDF Syllabus"):
+
+    upload = discord.ui.Label(
+        text="Syllabus file",
+        description="Choose a .pdffile",
+        component=discord.ui.FileUpload(
+            required=True,
+            min_values=1,
+            max_values=1
+        )
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        attachment = self.upload.component.values[0]
+
+        if not attachment.filename.lower().endswith(".pdf"):
+            await interaction.response.send_message(
+                "That isn't a .pdf file!",
+                ephemeral=True
+            )
+            return
+
+        file_path = os.path.join(
+            "temp_uploads",
+            attachment.filename
+        )
+
+        await attachment.save(file_path)
+
+        await interaction.response.send_message(
+            f"Saved `{attachment.filename}`!",
+            ephemeral=True
+        )
+
+class TxtUploadModal(discord.ui.Modal, title="Upload TXT Syllabus"):
+
+    upload = discord.ui.Label(
+        text="Syllabus file",
+        description="Choose a .txt file",
+        component=discord.ui.FileUpload(
+            required=True,
+            min_values=1,
+            max_values=1
+        )
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        attachment = self.upload.component.values[0]
+
+        if not attachment.filename.lower().endswith(".txt"):
+            await interaction.response.send_message(
+                "That isn't a .txt file!",
+                ephemeral=True
+            )
+            return
+
+        file_path = os.path.join(
+            "temp_uploads",
+            attachment.filename
+        )
+
+        await attachment.save(file_path)
+
+        await interaction.response.send_message(
+            f"Saved `{attachment.filename}`!",
+            ephemeral=True
+        )
+
+class SyllabusUploadView(discord.ui.View):
+
+    @discord.ui.button(label="DOCX", style=discord.ButtonStyle.primary)
+    async def docx_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(DocxUploadModal())
+
+    @discord.ui.button(label="PDF", style=discord.ButtonStyle.primary)
+    async def pdf_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(PdfUploadModal())
+
+    @discord.ui.button(label="TXT", style=discord.ButtonStyle.primary)
+    async def txt_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_modal(TxtUploadModal())
+
+@bot.tree.command(name="syllabusupload", description="Upload a syllabus")
+async def syllabusupload(interaction: discord.Interaction):
+    await interaction.response.send_message(
+        "What type of syllabus are you uploading?",
+        view=SyllabusUploadView(),
+        ephemeral=True
+    )
+
+# discord token
 bot.run(token, log_handler=handler, log_level=logging.DEBUG)
