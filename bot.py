@@ -4,6 +4,8 @@ import logging
 from dotenv import load_dotenv
 import os
 
+# old discord bot file
+
 #load env, load token
 load_dotenv()
 token = os.getenv('DISCORD_TOKEN')

@@ -8,6 +8,8 @@ from docx import Document
 from dotenv import load_dotenv
 from pydantic import BaseModel
 
+# old document parser file
+
 # Load API key
 load_dotenv()
 api_key = os.getenv("GEMINI_API_KEY")
