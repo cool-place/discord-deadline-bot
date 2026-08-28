@@ -3,7 +3,7 @@ from discord.ext import commands
 import logging
 from dotenv import load_dotenv
 import os
-from llmparser import extract_text_from_docx
+from llmparser import extract_text_from_docx, send_text_to_llm
 
 load_dotenv()
 discord_token = os.getenv('DISCORD_TOKEN')
@@ -122,9 +122,15 @@ class DocxUploadModal(discord.ui.Modal, title="Upload DOCX Syllabus"):
 
         await attachment.save(file_path)
 
-        text = extract_text_from_docx(file_path)
+        await interaction.response.defer(ephemeral=True, thinking=True)
 
-        await interaction.response.send_message(text[:1900], ephemeral=True)
+        text = extract_text_from_docx(file_path)
+        llm_result = await send_text_to_llm(text)
+
+        await interaction.followup.send(
+            llm_result[:1900],
+            ephemeral=True
+        )
 
 class PdfUploadModal(discord.ui.Modal, title="Upload PDF Syllabus"):
 

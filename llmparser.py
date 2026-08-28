@@ -21,5 +21,13 @@ def extract_text_from_docx(file_path):
 
     return all_docx_text
 
-    
+async def send_text_to_llm(text):
+    llmprompt = f"Read the following syllabus and identify its course name and all assignments, exams, and deadlines. SYLLABUS: {text}"
+
+    response = await client.aio.models.generate_content(
+        model ="gemini-3.6-flash" ,
+        contents=llmprompt
+    )
+
+    return response.text
 
