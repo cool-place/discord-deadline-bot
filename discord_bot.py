@@ -124,13 +124,17 @@ class DocxUploadModal(discord.ui.Modal, title="Upload DOCX Syllabus"):
 
         await interaction.response.defer(ephemeral=True, thinking=True)
 
-        text = extract_text_from_docx(file_path)
-        llm_result = await send_text_to_llm(text)
-
-        await interaction.followup.send(
-            llm_result[:1900],
-            ephemeral=True
-        )
+        try:
+            text = extract_text_from_docx(file_path)
+            llm_result = await send_text_to_llm(text)
+        
+            await interaction.followup.send(
+                llm_result[:1900],
+                ephemeral=True
+            )
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
 class PdfUploadModal(discord.ui.Modal, title="Upload PDF Syllabus"):
 

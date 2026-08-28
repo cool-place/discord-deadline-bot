@@ -7,7 +7,7 @@ from google.genai import types
 from docx2python import docx2python
 import os
 import json
-import fitz # *PyMuPDF
+import pymupdf
 
 # Load API key
 load_dotenv()
@@ -21,8 +21,15 @@ def extract_text_from_docx(file_path):
 
     return all_docx_text
 
+def extract_text_from_pdf(file_path):
+
+    with pymupdf.open(file_path) as doc:
+        all_pdf_text = "".join([page.get_text() for page in doc])
+
+    return all_pdf_text
+
 async def send_text_to_llm(text):
-    llmprompt = f"Read the following syllabus and identify its course name and all assignments, exams, and deadlines. SYLLABUS: {text}"
+    llmprompt = f"Read the following syllabus and identify its course name and the most relevant deadlines only. SYLLABUS: {text}"
 
     response = await client.aio.models.generate_content(
         model ="gemini-3.6-flash" ,
