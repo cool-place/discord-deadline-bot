@@ -28,6 +28,9 @@ def extract_text_from_pdf(file_path):
 
     return all_pdf_text
 
+def extract_text_from_txt(file_path: str) -> str:
+    return Path(file_path).read_text(encoding="utf-8")
+
 async def send_text_to_llm(text):
     llmprompt = f"Read the following syllabus and identify its course name and the most relevant deadlines only. SYLLABUS: {text}"
 

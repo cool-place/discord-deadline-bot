@@ -3,7 +3,8 @@ from discord.ext import commands
 import logging
 from dotenv import load_dotenv
 import os
-from llmparser import extract_text_from_docx, send_text_to_llm
+import asyncio
+from llmparser import extract_text_from_docx, extract_text_from_pdf, extract_text_from_txt, send_text_to_llm
 
 load_dotenv()
 discord_token = os.getenv('DISCORD_TOKEN')
@@ -36,10 +37,20 @@ async def on_member_join(member):
 
 @bot.tree.command(name="test", description="test functions")
 async def test(interaction: discord.Interaction):
+
+    if not interaction.guild or not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("This command can only be used in the server!", ephemeral=True)
+        return
+
     await interaction.response.send_message("Hello!", ephemeral=True)
 
 @bot.tree.command(name="commands", description="bot commands")
 async def commands(interaction:discord.Interaction):
+
+    if not interaction.guild or not isinstance(interaction.user, discord.Member):
+        await interaction.response.send_message("This command can only be used in the server!", ephemeral=True)
+        return
+
     command_list = []
     for cmd in bot.tree.get_commands():
         if cmd.name == "commands":
@@ -56,7 +67,7 @@ async def commands(interaction:discord.Interaction):
 
     # Fail safe to ensure this isn't run in DMs
     if not interaction.guild or not isinstance(interaction.user, discord.Member):
-        await interaction.response.send_message("This command can only be used in a server!", ephemeral=True)
+        await interaction.response.send_message("This command can only be used in the server!", ephemeral=True)
         return
 
     guild = interaction.guild
@@ -115,22 +126,46 @@ class DocxUploadModal(discord.ui.Modal, title="Upload DOCX Syllabus"):
             )
             return
 
+        await interaction.response.defer(
+            ephemeral=True,
+            thinking=True
+        )
+
         file_path = os.path.join(
             "temp_uploads",
             attachment.filename
         )
 
+        print("Saving DOCX file")
         await attachment.save(file_path)
 
-        await interaction.response.defer(ephemeral=True, thinking=True)
-
         try:
+            print("Extracting DOCX text")
             text = extract_text_from_docx(file_path)
-            llm_result = await send_text_to_llm(text)
-        
-            await interaction.followup.send(
-                llm_result[:1900],
-                ephemeral=True
+
+            print("Sending text to Gemini")
+            result = await asyncio.wait_for(
+                send_text_to_llm(text),
+                timeout=60
+            )
+            print("gemini responded")
+
+            await interaction.edit_original_response(
+                content=result[:1900]
+            )
+
+        except asyncio.TimeoutError: 
+            print("gemini timed out")
+
+            await interaction.edit_original_response(
+                content="Gemini took too long to respond. Please try again."
+            )
+
+        except Exception as error:
+            print(f"Processing failed: {type(error).__name__}: {error}")
+
+            await interaction.edit_original_response(
+                content="Something went wrong while processing that syllabus. Likely that AI servers are experiencing high demand. Try again later."
             )
         finally:
             if os.path.exists(file_path):
@@ -140,7 +175,7 @@ class PdfUploadModal(discord.ui.Modal, title="Upload PDF Syllabus"):
 
     upload = discord.ui.Label(
         text="Syllabus file",
-        description="Choose a .pdffile",
+        description="Choose a .pdf file",
         component=discord.ui.FileUpload(
             required=True,
             min_values=1,
@@ -159,17 +194,50 @@ class PdfUploadModal(discord.ui.Modal, title="Upload PDF Syllabus"):
             )
             return
 
+        await interaction.response.defer(
+            ephemeral=True,
+            thinking=True
+        )
+
         file_path = os.path.join(
             "temp_uploads",
             attachment.filename
         )
 
+        print("Saving PDF file")
         await attachment.save(file_path)
 
-        await interaction.response.send_message(
-            f"Saved `{attachment.filename}`!",
-            ephemeral=True
-        )
+        try:
+            print("Extracting PDF text")
+            text = extract_text_from_pdf(file_path)
+
+            print("Sending text to Gemini")
+            result = await asyncio.wait_for(
+                send_text_to_llm(text),
+                timeout=60
+            )
+            print("gemini responded")
+
+            await interaction.edit_original_response(
+                content=result[:1900]
+            )
+
+        except asyncio.TimeoutError: 
+            print("gemini timed out")
+
+            await interaction.edit_original_response(
+                content="Gemini took too long to respond. Please try again."
+            )
+
+        except Exception as error:
+            print(f"Processing failed: {type(error).__name__}: {error}")
+
+            await interaction.edit_original_response(
+                content="Something went wrong while processing that syllabus. Likely that AI servers are experiencing high demand. Try again later."
+            )
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
 class TxtUploadModal(discord.ui.Modal, title="Upload TXT Syllabus"):
 
@@ -194,17 +262,50 @@ class TxtUploadModal(discord.ui.Modal, title="Upload TXT Syllabus"):
             )
             return
 
+        await interaction.response.defer(
+            ephemeral=True,
+            thinking=True
+        )
+
         file_path = os.path.join(
             "temp_uploads",
             attachment.filename
         )
 
+        print("Saving TXT file")
         await attachment.save(file_path)
 
-        await interaction.response.send_message(
-            f"Saved `{attachment.filename}`!",
-            ephemeral=True
-        )
+        try:
+            print("Extracting TXT text")
+            text = extract_text_from_txt(file_path)
+
+            print("Sending text to Gemini")
+            result = await asyncio.wait_for(
+                send_text_to_llm(text),
+                timeout=60
+            )
+            print("gemini responded")
+
+            await interaction.edit_original_response(
+                content=result[:1900]
+            )
+
+        except asyncio.TimeoutError: 
+            print("gemini timed out")
+
+            await interaction.edit_original_response(
+                content="Gemini took too long to respond. Please try again."
+            )
+
+        except Exception as error:
+            print(f"Processing failed: {type(error).__name__}: {error}")
+
+            await interaction.edit_original_response(
+                content="Something went wrong while processing that syllabus. Likely that AI servers are experiencing high demand. Try again later."
+            )
+        finally:
+            if os.path.exists(file_path):
+                os.remove(file_path)
 
 class SyllabusUploadView(discord.ui.View):
 
