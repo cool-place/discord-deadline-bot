@@ -4,3 +4,4 @@ __pycache__/
 discord.log
 *.pyc
 temp_uploads
+deadlines.db

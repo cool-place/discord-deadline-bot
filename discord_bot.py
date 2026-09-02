@@ -5,9 +5,22 @@ from dotenv import load_dotenv
 import os
 import asyncio
 from llmparser import extract_text_from_docx, extract_text_from_pdf, extract_text_from_txt, send_text_to_llm
-from database import initialize_database, save_deadline, get_deadlines_by_date
+from database import (
+    initialize_database,
+    save_deadline,
+    get_deadlines_by_date,
+    get_upcoming_deadlines,
+    save_canvas_deadline,
+    save_canvas_feed,
+    get_canvas_feeds,
+    save_d2l_deadline,
+    save_d2l_feed,
+    get_d2l_feeds
+)
 from datetime import datetime, timedelta, time
 from zoneinfo import ZoneInfo
+from canvas_parser import get_canvas_deadlines
+from d2l_parser import get_d2l_deadlines
 
 load_dotenv()
 discord_token = os.getenv('DISCORD_TOKEN')
@@ -31,8 +44,75 @@ initialize_database()
 
 central_time = ZoneInfo("America/Chicago")
 
+async def sync_d2l_feeds():
+
+    feeds = get_d2l_feeds()
+
+    for user_id, calendar_url in feeds:
+
+        try:
+
+            deadlines = await get_d2l_deadlines(calendar_url)
+
+            for deadline in deadlines:
+
+                save_d2l_deadline(
+                    user_id,
+                    deadline["course_name"],
+                    deadline["name"],
+                    deadline["due_date"],
+                    deadline["due_time"],
+                    deadline["d2l_uid"]
+                )
+
+            print(
+                f"Synced {len(deadlines)} D2L deadlines "
+                f"for user {user_id}"
+            )
+
+        except Exception as error:
+
+            print(
+                f"D2L sync failed for user {user_id}: "
+                f"{type(error).__name__}: {error}"
+            )
+
+async def sync_canvas_feeds():
+
+    feeds = get_canvas_feeds()
+
+    for user_id, calendar_url in feeds:
+
+        try:
+            deadlines = await get_canvas_deadlines(calendar_url)
+
+            for deadline in deadlines:
+
+                save_canvas_deadline(
+                    user_id,
+                    deadline["course_name"],
+                    deadline["name"],
+                    deadline["due_date"],
+                    deadline["due_time"],
+                    deadline["canvas_uid"]
+                )
+
+            print(
+                f"Synced {len(deadlines)} Canvas deadlines "
+                f"for user {user_id}"
+            )
+
+        except Exception as error:
+            print(
+                f"Canvas sync failed for user {user_id}: "
+                f"{type(error).__name__}: {error}"
+            )
+
 @tasks.loop(time=time(hour=8, minute=0, tzinfo=central_time))
 async def deadline_reminders():
+
+    await sync_canvas_feeds()
+    await sync_d2l_feeds()
 
     today = datetime.now(central_time).date()
 
@@ -136,6 +216,265 @@ async def commands(interaction:discord.Interaction):
     await private_channel.send(f"Welcome to your private room, {interaction.user.mention}!")
 
     await interaction.followup.send(f"{member.mention} is now my {newrole}!")
+
+class D2LConfirmView(discord.ui.View):
+
+    def __init__(self, deadlines, user_id, calendar_url):
+        super().__init__()
+
+        self.deadlines = deadlines
+        self.user_id = user_id
+        self.calendar_url = calendar_url
+
+    @discord.ui.button(
+        label="Confirm",
+        style=discord.ButtonStyle.success
+    )
+    async def confirm_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        save_d2l_feed(
+            self.user_id,
+            self.calendar_url
+        )
+
+        for deadline in self.deadlines:
+
+            save_d2l_deadline(
+                self.user_id,
+                deadline["course_name"],
+                deadline["name"],
+                deadline["due_date"],
+                deadline["due_time"],
+                deadline["d2l_uid"]
+            )
+
+        await interaction.response.edit_message(
+            content=f"Saved {len(self.deadlines)} D2L deadlines!",
+            view=None
+        )
+
+        print("D2L deadlines saved")
+
+    @discord.ui.button(
+        label="Cancel",
+        style=discord.ButtonStyle.danger
+    )
+    async def cancel_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        await interaction.response.edit_message(
+            content="D2L import cancelled.",
+            view=None
+        )
+
+class D2LCalendarModal(discord.ui.Modal, title="Connect D2L Calendar"):
+
+    calendar_url = discord.ui.TextInput(
+        label="D2L calendar feed URL",
+        placeholder="Paste your D2L .ics link here",
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        await interaction.response.defer(
+            ephemeral=True,
+            thinking=True
+        )
+
+        url = self.calendar_url.value.strip()
+
+        try:
+
+            print("Fetching D2L calendar")
+
+            deadlines = await get_d2l_deadlines(url)
+
+            print(f"Found {len(deadlines)} D2L deadlines")
+
+            if len(deadlines) == 0:
+                await interaction.edit_original_response(
+                    content="I couldn't find any upcoming D2L deadlines."
+                )
+                return
+
+            deadline_text = ""
+
+            for deadline in deadlines[:10]:
+
+                deadline_text += (
+                    f"**{deadline['name']}**\n"
+                    f"Course: {deadline['course_name']}\n"
+                    f"Date: {deadline['due_date']}\n"
+                    f"Time: {deadline['due_time'] or 'Not specified'}\n\n"
+                )
+
+            if len(deadlines) > 10:
+                deadline_text += (
+                    f"...and {len(deadlines) - 10} more deadlines.\n"
+                )
+
+            await interaction.edit_original_response(
+                content=(
+                    f"Here's what I found from D2L:\n\n"
+                    f"{deadline_text}\n"
+                    f"**Total: {len(deadlines)} deadlines**"
+                ),
+                view=D2LConfirmView(
+                    deadlines,
+                    interaction.user.id,
+                    url
+                )
+            )
+
+        except Exception as error:
+
+            print(
+                f"D2L ERROR: "
+                f"{type(error).__name__}: {error}"
+            )
+
+            await interaction.edit_original_response(
+                content="Something went wrong while reading your D2L calendar."
+            )
+
+class CanvasConfirmView(discord.ui.View):
+
+    def __init__(self, deadlines, user_id, calendar_url):
+        super().__init__()
+
+        self.deadlines = deadlines
+        self.user_id = user_id
+        self.calendar_url = calendar_url
+
+    @discord.ui.button(
+        label="Confirm",
+        style=discord.ButtonStyle.success
+    )
+    async def confirm_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        # Save the user's Canvas calendar link
+        save_canvas_feed(
+            self.user_id,
+            self.calendar_url
+        )
+
+        # Save or update every Canvas deadline
+        for deadline in self.deadlines:
+
+            save_canvas_deadline(
+                self.user_id,
+                deadline["course_name"],
+                deadline["name"],
+                deadline["due_date"],
+                deadline["due_time"],
+                deadline["canvas_uid"]
+            )
+
+        await interaction.response.edit_message(
+            content=f"Saved {len(self.deadlines)} Canvas deadlines!",
+            view=None
+        )
+
+        print("Canvas deadlines saved")
+
+    @discord.ui.button(
+        label="Cancel",
+        style=discord.ButtonStyle.danger
+    )
+    async def cancel_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        await interaction.response.edit_message(
+            content="Canvas import cancelled.",
+            view=None
+        )
+
+class CanvasCalendarModal(discord.ui.Modal, title="Connect Canvas Calendar"):
+
+    calendar_url = discord.ui.TextInput(
+        label="Canvas calendar feed URL",
+        placeholder="Paste your Canvas .ics link here",
+        required=True
+    )
+
+    async def on_submit(self, interaction: discord.Interaction):
+
+        await interaction.response.defer(
+            ephemeral=True,
+            thinking=True
+        )
+
+        url = self.calendar_url.value.strip()
+
+        try:
+
+            print("Fetching Canvas calendar")
+
+            deadlines = await get_canvas_deadlines(url)
+
+            print(f"Found {len(deadlines)} Canvas events")
+
+            if len(deadlines) == 0:
+                await interaction.edit_original_response(
+                    content="I couldn't find any upcoming Canvas deadlines."
+                )
+                return
+
+            deadline_text = ""
+
+            # Only preview first 10 so Discord message
+            # doesn't become gigantic
+            for deadline in deadlines[:10]:
+
+                deadline_text += (
+                    f"**{deadline['name']}**\n"
+                    f"Date: {deadline['due_date']}\n"
+                    f"Time: {deadline['due_time'] or 'Not specified'}\n\n"
+                )
+
+            if len(deadlines) > 10:
+                deadline_text += (
+                    f"...and {len(deadlines) - 10} more events.\n"
+                )
+
+            await interaction.edit_original_response(
+                content=(
+                    f"Here's what I found from Canvas:\n\n"
+                    f"{deadline_text}\n"
+                    f"**Total: {len(deadlines)} events**"
+                ),
+                view=CanvasConfirmView(
+                    deadlines,
+                    interaction.user.id,
+                    url
+                )
+            )
+
+        except Exception as error:
+
+            print(
+                f"CANVAS ERROR: "
+                f"{type(error).__name__}: {error}"
+            )
+
+            await interaction.edit_original_response(
+                content="Something went wrong while reading your Canvas calendar."
+            )
 
 class DeadlineConfirmView(discord.ui.View):
 
@@ -440,15 +779,72 @@ async def syllabusupload(interaction: discord.Interaction):
         ephemeral=True
     )
 
-@bot.tree.command(name="testreminders", description="Test deadline reminders")
-async def testreminders(interaction: discord.Interaction):
+@bot.tree.command(
+    name="connectd2l",
+    description="Connect your D2L calendar"
+)
+async def connectd2l(interaction: discord.Interaction):
 
-    today = datetime.now(central_time).date().isoformat()
+    await interaction.response.send_modal(
+        D2LCalendarModal()
+    )
 
-    deadlines = get_deadlines_by_date(today)
+@bot.tree.command(
+    name="connectcanvas",
+    description="Connect your Canvas calendar"
+)
+async def connectcanvas(interaction: discord.Interaction):
+
+    await interaction.response.send_modal(
+        CanvasCalendarModal()
+    )
+
+@bot.tree.command(
+    name="upcoming",
+    description="Show deadlines due in the next 7 days"
+)
+async def upcoming(interaction: discord.Interaction):
+
+    today = datetime.now(central_time).date()
+
+    end_date = today + timedelta(days=7)
+
+    deadlines = get_upcoming_deadlines(
+        interaction.user.id,
+        today.isoformat(),
+        end_date.isoformat()
+    )
+
+    if len(deadlines) == 0:
+        await interaction.response.send_message(
+            "You don't have any deadlines due in the next 7 days!",
+            ephemeral=True
+        )
+        return
+
+    deadline_text = ""
+
+    for deadline in deadlines[:10]:
+
+        course_name = deadline[0]
+        assignment_name = deadline[1]
+        due_date = deadline[2]
+        due_time = deadline[3]
+
+        deadline_text += (
+            f"**{assignment_name}**\n"
+            f"Course: {course_name}\n"
+            f"Date: {due_date}\n"
+            f"Time: {due_time or 'Not specified'}\n\n"
+        )
+
+    if len(deadlines) > 10:
+        deadline_text += (
+            f"...and {len(deadlines) - 10} more deadlines."
+        )
 
     await interaction.response.send_message(
-        f"Found {len(deadlines)} deadlines due today.",
+        f"Here are your upcoming deadlines:\n\n{deadline_text}",
         ephemeral=True
     )
 
