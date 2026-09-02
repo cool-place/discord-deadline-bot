@@ -1,10 +1,13 @@
 import discord
-from discord.ext import commands
+from discord.ext import commands, tasks
 import logging
 from dotenv import load_dotenv
 import os
 import asyncio
 from llmparser import extract_text_from_docx, extract_text_from_pdf, extract_text_from_txt, send_text_to_llm
+from database import initialize_database, save_deadline, get_deadlines_by_date
+from datetime import datetime, timedelta, time
+from zoneinfo import ZoneInfo
 
 load_dotenv()
 discord_token = os.getenv('DISCORD_TOKEN')
@@ -24,11 +27,42 @@ SERVER_GUILD_ID = discord.Object(id=1540596286657531946)
 
 newrole = "test dummy"
 
+initialize_database()
+
+central_time = ZoneInfo("America/Chicago")
+
+@tasks.loop(time=time(hour=8, minute=0, tzinfo=central_time))
+async def deadline_reminders():
+
+    today = datetime.now(central_time).date()
+
+    today_string = today.isoformat()
+
+    deadlines = get_deadlines_by_date(today_string)
+
+    for deadline in deadlines:
+
+        user_id = deadline[0]
+        course_name = deadline[1]
+        assignment_name = deadline[2]
+        due_date = deadline[3]
+        due_time = deadline[4]
+
+        user = await bot.fetch_user(user_id)
+
+        await user.send(
+            f"Reminder! **{assignment_name}** for **{course_name}** is due today!"
+        )
+
 @bot.event
 async def on_ready():
 
     bot.tree.copy_global_to(guild=SERVER_GUILD_ID)
     await bot.tree.sync(guild=SERVER_GUILD_ID)
+
+    if not deadline_reminders.is_running():
+        deadline_reminders.start()
+
     print(f"{bot.user.name} activated!")
 
 @bot.event 
@@ -103,6 +137,49 @@ async def commands(interaction:discord.Interaction):
 
     await interaction.followup.send(f"{member.mention} is now my {newrole}!")
 
+class DeadlineConfirmView(discord.ui.View):
+
+    def __init__(self, result, user_id):
+        super().__init__()
+
+        self.result = result
+        self.user_id = user_id
+
+    @discord.ui.button(label="Confirm", style=discord.ButtonStyle.success)
+    async def confirm_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        for deadline in self.result.deadlines:
+            save_deadline(
+                self.user_id,
+                self.result.course_name,
+                deadline.name,
+                deadline.due_date,
+                deadline.due_time
+            )
+
+        await interaction.response.edit_message(
+            content=f"Saved {len(self.result.deadlines)} deadlines for {self.result.course_name}!",
+            view=None
+        )
+
+        print("deadlines saved")
+
+    @discord.ui.button(label="Cancel", style=discord.ButtonStyle.danger)
+    async def cancel_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button
+    ):
+
+        await interaction.response.edit_message(
+            content="Syllabus import cancelled.",
+            view=None
+        )
+
 class DocxUploadModal(discord.ui.Modal, title="Upload DOCX Syllabus"):
 
     upload = discord.ui.Label(
@@ -148,10 +225,22 @@ class DocxUploadModal(discord.ui.Modal, title="Upload DOCX Syllabus"):
                 send_text_to_llm(text),
                 timeout=60
             )
-            print("gemini responded")
+
+            print("Gemini responded")
+            print(result)
+
+            deadline_text = f"**{result.course_name}**\n\n"
+
+            for deadline in result.deadlines:
+                deadline_text += (
+                    f"**{deadline.name}**\n"
+                    f"Date: {deadline.due_date}\n"
+                    f"Time: {deadline.due_time or 'Not specified'}\n\n"
+                )
 
             await interaction.edit_original_response(
-                content=result[:1900]
+                content=f"Here's what I found:\n\n{deadline_text}",
+                view=DeadlineConfirmView(result, interaction.user.id)
             )
 
         except asyncio.TimeoutError: 
@@ -216,10 +305,21 @@ class PdfUploadModal(discord.ui.Modal, title="Upload PDF Syllabus"):
                 send_text_to_llm(text),
                 timeout=60
             )
-            print("gemini responded")
+            print("Gemini responded")
+            print(result)
+
+            deadline_text = f"**{result.course_name}**\n\n"
+
+            for deadline in result.deadlines:
+                deadline_text += (
+                    f"**{deadline.name}**\n"
+                    f"Date: {deadline.due_date}\n"
+                    f"Time: {deadline.due_time or 'Not specified'}\n\n"
+                )
 
             await interaction.edit_original_response(
-                content=result[:1900]
+                content=f"Here's what I found:\n\n{deadline_text}",
+                view=DeadlineConfirmView(result, interaction.user.id)
             )
 
         except asyncio.TimeoutError: 
@@ -284,10 +384,21 @@ class TxtUploadModal(discord.ui.Modal, title="Upload TXT Syllabus"):
                 send_text_to_llm(text),
                 timeout=60
             )
-            print("gemini responded")
+            print("Gemini responded")
+            print(result)
+
+            deadline_text = f"**{result.course_name}**\n\n"
+
+            for deadline in result.deadlines:
+                deadline_text += (
+                    f"**{deadline.name}**\n"
+                    f"Date: {deadline.due_date}\n"
+                    f"Time: {deadline.due_time or 'Not specified'}\n\n"
+                )
 
             await interaction.edit_original_response(
-                content=result[:1900]
+                content=f"Here's what I found:\n\n{deadline_text}",
+                view=DeadlineConfirmView(result, interaction.user.id)
             )
 
         except asyncio.TimeoutError: 
@@ -329,7 +440,16 @@ async def syllabusupload(interaction: discord.Interaction):
         ephemeral=True
     )
 
+@bot.tree.command(name="testreminders", description="Test deadline reminders")
+async def testreminders(interaction: discord.Interaction):
 
+    today = datetime.now(central_time).date().isoformat()
 
+    deadlines = get_deadlines_by_date(today)
+
+    await interaction.response.send_message(
+        f"Found {len(deadlines)} deadlines due today.",
+        ephemeral=True
+    )
 
 bot.run(discord_token, log_handler=handler, log_level=logging.DEBUG)
