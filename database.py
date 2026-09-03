@@ -1,8 +1,14 @@
 import sqlite3
+import os
+
+database_path = os.path.join(
+    os.getenv("RAILWAY_VOLUME_MOUNT_PATH", "."),
+    "deadlines.db"
+)
 
 def initialize_database():
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
 
     cursor = connection.cursor()
 
@@ -52,7 +58,7 @@ def initialize_database():
 
 def save_canvas_feed(user_id, calendar_url):
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -71,7 +77,7 @@ def save_canvas_feed(user_id, calendar_url):
 
 def get_canvas_feeds():
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -94,7 +100,7 @@ def save_canvas_deadline(
     canvas_uid
 ):
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -152,7 +158,7 @@ def save_canvas_deadline(
 
 def save_deadline(user_id, course_name, assignment_name, due_date, due_time):
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -178,7 +184,7 @@ def save_deadline(user_id, course_name, assignment_name, due_date, due_time):
 
 def get_deadlines_by_date(due_date):
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -195,7 +201,7 @@ def get_deadlines_by_date(due_date):
 
 def save_d2l_feed(user_id, calendar_url):
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -215,7 +221,7 @@ def save_d2l_feed(user_id, calendar_url):
 
 def get_d2l_feeds():
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -239,7 +245,7 @@ def save_d2l_deadline(
     d2l_uid
 ):
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -297,7 +303,7 @@ def save_d2l_deadline(
 
 def get_upcoming_deadlines(user_id, start_date, end_date):
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""
@@ -320,7 +326,7 @@ def get_upcoming_deadlines(user_id, start_date, end_date):
 
 def delete_user_data(user_id):
 
-    connection = sqlite3.connect("deadlines.db")
+    connection = sqlite3.connect(database_path)
     cursor = connection.cursor()
 
     cursor.execute("""

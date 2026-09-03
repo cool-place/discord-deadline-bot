@@ -1,0 +1,9 @@
+discord.py
+python-dotenv
+google-genai
+pydantic
+docx2python
+PyMuPDF
+aiohttp
+icalendar
+tzdata
